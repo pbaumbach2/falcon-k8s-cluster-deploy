@@ -5,7 +5,6 @@ Description: Bash script to deploy Falcon Node Sensor as daemonset and Kubernete
 Requirements: docker or podman or skopeo, jq, helm 
 #DESCRIPTION#
 
-# PCB: Testing set on/off
 set -e
 
 usage()
