@@ -15,16 +15,15 @@ Required Flags:
     -u, --client-id <FALCON_CLIENT_ID>             Falcon API OAUTH Client ID
     -s, --client-secret <FALCON_CLIENT_SECRET>     Falcon API OAUTH Client Secret
     -f, --cid <FALCON_CID_LONG>                    Falcon Customer ID inlcuding 2 digit checksum
-    -c, --cluster <K8S_CLUSTER_NAME>                    Customer cluster name
+    -c, --cluster <K8S_CLUSTER_NAME>               Customer cluster name
 Optional Flags:
-    -r, --region <FALCON_REGION>      Falcon Cloud
-    -v, --version <SENSOR_VERSION>    Specify sensor version to deploy. Default is latest.
-    --ebpf <BACKEND>                  Deploy Falcon sensor in User - ebpf mode. Default is kernel.
-    -n, --node <SENSORTYPE>           Download node sensor instead of container sensor
-    
-    --runtime           use a different container runtime [docker, podman, skopeo]. Default is docker.
-    --dump-credentials  print registry credentials to stdout to copy/paste into container tools.
-    --list-tags         list all tags available for the selected sensor
+    -r, --region <FALCON_REGION>     Falcon Cloud
+    -v, --version <SENSOR_VERSION>   Specify sensor version to deploy. Default is latest.
+    --ebpf                           Deploy Falcon sensor in User - ebpf mode. Default is kernel.
+    --sidecar                        Download sidecar-container sensor instead of container sensor
+    --skip-kpa                       Skip deployment of KPA 
+    --skip-sensor                    Skip deployment of Falcon sensor   
+    --runtime                        Use a different container runtime [docker, podman, skopeo]. Default is docker.
 
 Help Options:
     -h, --help display this help message"
@@ -90,7 +89,7 @@ case "$1" in
     ;;
     -c|--cluster)
     if [ -n "${2}" ]; then
-        CLUSTER="${2}"
+        K8S_CLUSTER_NAME="${2}"
         shift
     fi
     ;;
@@ -100,31 +99,30 @@ case "$1" in
         shift
     fi
     ;;
-    --ebpf)
-    if [ -n "${1}" ]; then
-        BACKEND="bpf"
-        shift
-    fi
-    ;;
     --runtime)
     if [ -n "${2}" ]; then
         CONTAINER_TOOL="${2}"
         shift
     fi
     ;;
-    --dump-credentials)
+    --ebpf)
     if [ -n "${1}" ]; then
-        CREDS=true
+        BACKEND="bpf"
     fi
     ;;
-    --list-tags)
+    --sidecar)
     if [ -n "${1}" ]; then
-        LISTTAGS=true
+        SENSORTYPE="falcon-container"
     fi
     ;;
-    -n|--node)
+    --skip-kpa)
     if [ -n "${1}" ]; then
-        SENSORTYPE="falcon-sensor"
+        SKIPKPA=true
+    fi
+    ;;
+    --skip-sensor)
+    if [ -n "${1}" ]; then
+        SKIPSENSOR=true
     fi
     ;;
     -h|--help)
@@ -159,17 +157,28 @@ SENSOR_VERSION=$(echo "$SENSOR_VERSION" | tr '[:upper:]' '[:lower:]')
 
 #Check if user wants to download DaemonSet Node Sensor
 if [ -z "$SENSORTYPE" ]; then
-    SENSORTYPE="falcon-container"
-fi
-
-#Check if user wants to deploy sensor in user mode (ebpf)
-if [ -z "$BACKEND" ]; then
-    BACKEND="kernel"
+    SENSORTYPE="falcon-sensor"
 fi
 
 #Check if user wants to deploy sensor in user mode instead of default kernel mode
 if [ -z "$BACKEND" ]; then
     BACKEND="kernel"
+fi
+
+#Check if user wants to skip sensor deployment
+if [ -z "$SKIPSENSOR" ]; then
+    SKIPSENSOR=false
+fi
+
+#Check if user wants to skip Kubernetes Protection Agent deployment
+if [ -z "$SKIPKPA" ]; then
+    SKIPKPA=false
+fi
+
+#Check for incompatible backend for container sensor
+if [[ ${BACKEND} = "bpf" && ${SENSORTYPE} = "falcon-container" ]]; then
+    echo "The eBPF user mode is incompatible with Sidecar sensor"
+    exit 1
 fi
 
 #Check all mandatory variables set
@@ -188,140 +197,184 @@ else
     CONTAINER_TOOL=$(command -v "$CONTAINER_TOOL")
 fi
 
-response_headers=$(mktemp)
-cs_falcon_oauth_token=$(
-    if ! command -v curl > /dev/null 2>&1; then
-        die "The 'curl' command is missing. Please install it before continuing. Aborting..."
+# Functions to authenticate and deploy
+function auth_and_tag {
+    response_headers=$(mktemp)
+    cs_falcon_oauth_token=$(
+        if ! command -v curl > /dev/null 2>&1; then
+            die "The 'curl' command is missing. Please install it before continuing. Aborting..."
+        fi
+
+        token_result=$(echo "client_id=$FALCON_CLIENT_ID&client_secret=$FALCON_CLIENT_SECRET" | \
+                    curl -X POST -s -L "https://$(cs_cloud)/oauth2/token" \
+                        -H 'Content-Type: application/x-www-form-urlencoded; charset=utf-8' \
+                        --dump-header "$response_headers" \
+                        --data @-)
+        token=$(echo "$token_result" | json_value "access_token" | sed 's/ *$//g' | sed 's/^ *//g')
+        if [ -z "$token" ]; then
+            die "Unable to obtain CrowdStrike Falcon OAuth Token. Response was $token_result"
+        fi
+        echo "$token"
+    )
+
+    region_hint=$(grep -i ^x-cs-region: "$response_headers" | head -n 1 | tr '[:upper:]' '[:lower:]' | tr -d '\r' | sed 's/^x-cs-region: //g')
+    rm "${response_headers}"
+
+    if [ "x${FALCON_CLOUD}" != "x${region_hint}" ] && [ "${region_hint}" != "" ]; then
+        if [ -z "${region_hint}" ]; then
+            die "Unable to obtain region hint from CrowdStrike Falcon OAuth API, Please provide FALCON_CLOUD environment variable as an override."
+        fi
+        FALCON_CLOUD="${region_hint}"
     fi
 
-    token_result=$(echo "client_id=$FALCON_CLIENT_ID&client_secret=$FALCON_CLIENT_SECRET" | \
-                   curl -X POST -s -L "https://$(cs_cloud)/oauth2/token" \
-                       -H 'Content-Type: application/x-www-form-urlencoded; charset=utf-8' \
-                       --dump-header "$response_headers" \
-                       --data @-)
-    token=$(echo "$token_result" | json_value "access_token" | sed 's/ *$//g' | sed 's/^ *//g')
-    if [ -z "$token" ]; then
-        die "Unable to obtain CrowdStrike Falcon OAuth Token. Response was $token_result"
-    fi
-    echo "$token"
-)
+    registry_opts=$(
+        # Account for govcloud api mismatch
+        if [ "${FALCON_CLOUD}" = "us-gov-1" ]; then
+            echo "$SENSORTYPE/govcloud"
+        else
+            echo "$SENSORTYPE/$FALCON_CLOUD"
+        fi
+    )
 
-region_hint=$(grep -i ^x-cs-region: "$response_headers" | head -n 1 | tr '[:upper:]' '[:lower:]' | tr -d '\r' | sed 's/^x-cs-region: //g')
-rm "${response_headers}"
+    cs_falcon_cid=$(
+        if [ -n "$FALCON_CID" ]; then
+            echo "$FALCON_CID" | cut -d'-' -f1 | tr '[:upper:]' '[:lower:]'
+        else
+            cs_target_cid=$(echo "authorization: Bearer $cs_falcon_oauth_token" | curl -s -L "https://$(cs_cloud)/sensors/queries/installers/ccid/v1" -H @-)
+            echo "$cs_target_cid" | tr -d '\n" ' | awk -F'[][]' '{print $2}' | cut -d'-' -f1 | tr '[:upper:]' '[:lower:]'
+        fi
+    )
 
-if [ "x${FALCON_CLOUD}" != "x${region_hint}" ] && [ "${region_hint}" != "" ]; then
-    if [ -z "${region_hint}" ]; then
-        die "Unable to obtain region hint from CrowdStrike Falcon OAuth API, Please provide FALCON_CLOUD environment variable as an override."
-    fi
-    FALCON_CLOUD="${region_hint}"
-fi
-
-registry_opts=$(
-    # Account for govcloud api mismatch
-    if [ "${FALCON_CLOUD}" = "us-gov-1" ]; then
-        echo "$SENSORTYPE/govcloud"
-    else
-        echo "$SENSORTYPE/$FALCON_CLOUD"
-    fi
-)
-
-cs_falcon_cid=$(
-    if [ -n "$FALCON_CID" ]; then
-        echo "$FALCON_CID" | cut -d'-' -f1 | tr '[:upper:]' '[:lower:]'
-    else
-        cs_target_cid=$(echo "authorization: Bearer $cs_falcon_oauth_token" | curl -s -L "https://$(cs_cloud)/sensors/queries/installers/ccid/v1" -H @-)
-        echo "$cs_target_cid" | tr -d '\n" ' | awk -F'[][]' '{print $2}' | cut -d'-' -f1 | tr '[:upper:]' '[:lower:]'
-    fi
-)
-
-if [ ! "$LISTTAGS" ] ; then
-    echo "Using the following settings:"
-    echo "Falcon Region:   $(cs_cloud)"
-    echo "Falcon Registry: ${cs_registry}"
-fi
-#Set Docker token using the BEARER token captured earlier
-ART_PASSWORD=$(echo "authorization: Bearer $cs_falcon_oauth_token" | curl -s -L \
-"https://$(cs_cloud)/container-security/entities/image-registry-credentials/v1" -H @- | json_value "token" | sed 's/ *$//g' | sed 's/^ *//g')
-
-#Set container login
-(echo "$ART_PASSWORD" | "$CONTAINER_TOOL" login --username "fc-$cs_falcon_cid" "$cs_registry" --password-stdin >/dev/null 2>&1) || ERROR=true
-if [ "${ERROR}" = true ]; then
-    die "ERROR: ${CONTAINER_TOOL} login failed"
-fi
-
-if [ "$LISTTAGS" ] ; then
-    case "${CONTAINER_TOOL}" in
-        *podman)
-        die "Please use docker runtime to list tags" ;;
-        *docker)
-        REGISTRYBEARER=$(echo "-u fc-$cs_falcon_cid:$ART_PASSWORD" | curl -s -L "https://$cs_registry/v2/token?=fc-$cs_falcon_cid&scope=repository:$registry_opts/release/falcon-sensor:pull&service=registry.crowdstrike.com" -K- | json_value "token" | sed 's/ *$//g' | sed 's/^ *//g')
-        echo "authorization: Bearer $REGISTRYBEARER" | curl -s -L "https://$cs_registry/v2/$registry_opts/release/falcon-sensor/tags/list" -H @- | sed "s/, /, \\n/g" ;;
-        *skopeo)
-        die "Please use docker runtime to list tags" ;;
-        *)         die "Unrecognized option: ${CONTAINER_TOOL}";;
-    esac    
-    exit 0
-fi
-
-#Get latest sensor version
-case "${CONTAINER_TOOL}" in
-        *podman)
-        LATESTSENSOR=$($CONTAINER_TOOL image search --list-tags "$cs_registry/$registry_opts/release/falcon-sensor" | grep "$SENSOR_VERSION" | tail -1 | cut -d" " -f3);;
-        *docker)
-        REGISTRYBEARER=$(echo "-u fc-$cs_falcon_cid:$ART_PASSWORD" | curl -s -L "https://$cs_registry/v2/token?=fc-$cs_falcon_cid&scope=repository:$registry_opts/release/falcon-sensor:pull&service=registry.crowdstrike.com" -K- | json_value "token" | sed 's/ *$//g' | sed 's/^ *//g')
-        LATESTSENSOR=$(echo "authorization: Bearer $REGISTRYBEARER" | curl -s -L "https://$cs_registry/v2/$registry_opts/release/falcon-sensor/tags/list" -H @- | awk -v RS=" " '{print}' | grep "$SENSOR_VERSION" | grep -o "[0-9a-zA-Z_\.\-]*" | tail -1);;
-        *skopeo)
-        LATESTSENSOR=$($CONTAINER_TOOL list-tags "docker://$cs_registry/$registry_opts/release/falcon-sensor" | grep "$SENSOR_VERSION" | grep -o "[0-9a-zA-Z_\.\-]*" | tail -1) ;;
-        *)         die "Unrecognized option: ${CONTAINER_TOOL}";;
-esac
-
-if [ "$CREDS" ] ; then
-    echo "CS Registry Username: fc-${cs_falcon_cid}"
-    echo "CS Registry Password: ${ART_PASSWORD}"
-    exit 0
-fi
-
-# Deploy Falcon sensor via helm
-# -w flag is unnecessary and errors out on macOS on base64 utility. 
-REPOSITORY="$cs_registry/$registry_opts/release/falcon-sensor"
-OS=$(uname -s)
-if [ "$OS" = "Darwin" ]; then
-    ART_USERNAME="fc-$(echo ${FALCON_CID} | awk '{ print tolower($0) }' | cut -d'-' -f1)"
-    IMAGE_PULL_TOKEN=$(echo -n $ART_USERNAME:$ART_PASSWORD | base64)
-    registryConfigJSON=$(echo {"\"auths\"":{"\"${cs_registry}\"":{"\"auth\"":"\"${IMAGE_PULL_TOKEN}\""}}} | base64)
+# Display info about deployment
+echo "Using the following settings:"
+echo "Falcon Region:   $(cs_cloud)"
+echo "Falcon Registry: ${cs_registry}"
+echo "Falcon CID: ${FALCON_CID_LONG}"
+echo "Cluster Name: ${K8S_CLUSTER_NAME}"
+if [ $SENSORTYPE = "falcon-container" ]; then
+    echo "Sensor being deployed as sidecar"
 else
-    ART_USERNAME="fc-$(echo ${FALCON_CID} | awk '{ print tolower($0) }' | cut -d'-' -f1)"
-    IMAGE_PULL_TOKEN=$(echo -n $ART_USERNAME:$ART_PASSWORD | base64 -w 0)
-    registryConfigJSON=$(echo {"\"auths\"":{"\"${cs_registry}\"":{"\"auth\"":"\"${IMAGE_PULL_TOKEN}\""}}} | base64 -w 0)
+    echo "Sensor being deployed as daemonset node sensor"
+    echo "Deploying in ${BACKEND} mode"
 fi
 
-helm repo add crowdstrike https://crowdstrike.github.io/falcon-helm
-helm repo update
-helm upgrade --install falcon-helm crowdstrike/falcon-sensor \
-    -n falcon-system --create-namespace \
-    --set falcon.cid=${FALCON_CID_LONG} \
-    --set node.image.repository=${REPOSITORY} \
-    --set node.image.tag=${LATESTSENSOR} \
-    --set node.image.registryConfigJSON=${registryConfigJSON} \
-    --set node.backend=${BACKEND}
+    #Set Docker token using the BEARER token captured earlier
+    ART_PASSWORD=$(echo "authorization: Bearer $cs_falcon_oauth_token" | curl -s -L \
+    "https://$(cs_cloud)/container-security/entities/image-registry-credentials/v1" -H @- | json_value "token" | sed 's/ *$//g' | sed 's/^ *//g')
+
+    #Set container login
+    (echo "$ART_PASSWORD" | "$CONTAINER_TOOL" login --username "fc-$cs_falcon_cid" "$cs_registry" --password-stdin >/dev/null 2>&1) || ERROR=true
+    if [ "${ERROR}" = true ]; then
+        die "ERROR: ${CONTAINER_TOOL} login failed"
+    fi
+
+    if [ "$LISTTAGS" ] ; then
+        case "${CONTAINER_TOOL}" in
+            *podman)
+            die "Please use docker runtime to list tags" ;;
+            *docker)
+            REGISTRYBEARER=$(echo "-u fc-$cs_falcon_cid:$ART_PASSWORD" | curl -s -L "https://$cs_registry/v2/token?=fc-$cs_falcon_cid&scope=repository:$registry_opts/release/falcon-sensor:pull&service=registry.crowdstrike.com" -K- | json_value "token" | sed 's/ *$//g' | sed 's/^ *//g')
+            echo "authorization: Bearer $REGISTRYBEARER" | curl -s -L "https://$cs_registry/v2/$registry_opts/release/falcon-sensor/tags/list" -H @- | sed "s/, /, \\n/g" ;;
+            *skopeo)
+            die "Please use docker runtime to list tags" ;;
+            *)         die "Unrecognized option: ${CONTAINER_TOOL}";;
+        esac    
+        exit 0
+    fi
+
+    #Get latest sensor version
+    case "${CONTAINER_TOOL}" in
+            *podman)
+            LATESTSENSOR=$($CONTAINER_TOOL image search --list-tags "$cs_registry/$registry_opts/release/falcon-sensor" | grep "$SENSOR_VERSION" | tail -1 | cut -d" " -f3);;
+            *docker)
+            REGISTRYBEARER=$(echo "-u fc-$cs_falcon_cid:$ART_PASSWORD" | curl -s -L "https://$cs_registry/v2/token?=fc-$cs_falcon_cid&scope=repository:$registry_opts/release/falcon-sensor:pull&service=registry.crowdstrike.com" -K- | json_value "token" | sed 's/ *$//g' | sed 's/^ *//g')
+            LATESTSENSOR=$(echo "authorization: Bearer $REGISTRYBEARER" | curl -s -L "https://$cs_registry/v2/$registry_opts/release/falcon-sensor/tags/list" -H @- | awk -v RS=" " '{print}' | grep "$SENSOR_VERSION" | grep -o "[0-9a-zA-Z_\.\-]*" | tail -1);;
+            *skopeo)
+            LATESTSENSOR=$($CONTAINER_TOOL list-tags "docker://$cs_registry/$registry_opts/release/falcon-sensor" | grep "$SENSOR_VERSION" | grep -o "[0-9a-zA-Z_\.\-]*" | tail -1) ;;
+            *)         die "Unrecognized option: ${CONTAINER_TOOL}";;
+    esac
+
+    # Create base64 encoded config JSON 
+    # -w flag is unnecessary and errors out on macOS on base64 utility. 
+    REPOSITORY="$cs_registry/$registry_opts/release/falcon-sensor"
+    OS=$(uname -s)
+    if [ "${OS}" = "Darwin" ]; then
+        ART_USERNAME="fc-$(echo ${FALCON_CID} | awk '{ print tolower($0) }' | cut -d'-' -f1)"
+        IMAGE_PULL_TOKEN=$(echo -n $ART_USERNAME:$ART_PASSWORD | base64)
+        registryConfigJSON=$(echo {"\"auths\"":{"\"${cs_registry}\"":{"\"auth\"":"\"${IMAGE_PULL_TOKEN}\""}}} | base64)
+    else
+        ART_USERNAME="fc-$(echo ${FALCON_CID} | awk '{ print tolower($0) }' | cut -d'-' -f1)"
+        IMAGE_PULL_TOKEN=$(echo -n $ART_USERNAME:$ART_PASSWORD | base64 -w 0)
+        registryConfigJSON=$(echo {"\"auths\"":{"\"${cs_registry}\"":{"\"auth\"":"\"${IMAGE_PULL_TOKEN}\""}}} | base64 -w 0)
+    fi
+    return
+}
+
+function deploy_node_sensor {
+    helm repo add crowdstrike https://crowdstrike.github.io/falcon-helm
+    helm repo update
+    helm upgrade --install falcon-helm crowdstrike/falcon-sensor \
+        -n falcon-system --create-namespace \
+        --set falcon.cid=${FALCON_CID_LONG} \
+        --set node.image.repository=${REPOSITORY} \
+        --set node.image.tag=${LATESTSENSOR} \
+        --set node.image.registryConfigJSON=${registryConfigJSON} \
+        --set node.backend=${BACKEND} 
+    return
+}
+    
+function deploy_container_sensor {
+    helm repo add crowdstrike https://crowdstrike.github.io/falcon-helm
+    helm repo update
+    helm upgrade --install falcon-helm crowdstrike/falcon-sensor \
+        -n falcon-system --create-namespace \
+        --set falcon.cid=${FALCON_CID_LONG} \
+        --set container.image.repository=${REPOSITORY} \
+        --set container.image.tag=${LATESTSENSOR} \
+        --set node.enabled=false \
+        --set container.enabled=true \
+        --set container.image.pullSecrets.enable=true \
+        --set container.image.pullSecrets.allNamespaces=true \
+        --set container.image.pullSecrets.registryConfigJSON=${registryConfigJSON} 
+    echo ""
+    echo "Sidecar injector deployed. You must restart pre-existing pods to inject sensor into those workloads."
+    echo ""
+    return
+}
 
 #Deploy KPA via helm
-#Get Docker API token (Same token as from UI)
-FALCON_API_ACCESS_TOKEN=$(curl -sL -X POST "https://$(cs_cloud)/oauth2/token" \
-    -H "Content-Type: application/x-www-form-urlencoded" \
-    --data-urlencode "client_id=${FALCON_CLIENT_ID}" \
-    --data-urlencode "client_secret=${FALCON_CLIENT_SECRET}" | jq -cr '.access_token')
-FALCON_KPA_PASSWORD=$(curl -L -X GET "https://$(cs_cloud)/kubernetes-protection/entities/integration/agent/v1?cluster_name=""&is_self_managed_cluster=true" \
-    -H "Accept: application/yaml" \
-    -H "Authorization: Bearer ${FALCON_API_ACCESS_TOKEN}" | awk '/dockerAPIToken:/ {print $2}')
-helm repo add kpagent-helm https://registry.crowdstrike.com/kpagent-helm && helm repo update
-helm repo update
-helm upgrade --install --create-namespace -n falcon-kubernetes-protection kpagent kpagent-helm/cs-k8s-protection-agent \
-    --set crowdstrikeConfig.clientID=${FALCON_CLIENT_ID} \
-    --set crowdstrikeConfig.clientSecret=${FALCON_CLIENT_SECRET} \
-    --set crowdstrikeConfig.clusterName=${K8S_CLUSTER_NAME} \
-    --set crowdstrikeConfig.env=${FALCON_CLOUD} \
-    --set crowdstrikeConfig.cid=${FALCON_CID} \
-    --set crowdstrikeConfig.dockerAPIToken=${FALCON_KPA_PASSWORD}
+#Pulls Docker API token programatically for registry pull token
+function deploy_kpa {
+    FALCON_API_ACCESS_TOKEN=$(curl -sL -X POST "https://$(cs_cloud)/oauth2/token" \
+        -H "Content-Type: application/x-www-form-urlencoded" \
+        --data-urlencode "client_id=${FALCON_CLIENT_ID}" \
+        --data-urlencode "client_secret=${FALCON_CLIENT_SECRET}" | jq -cr '.access_token')
+    FALCON_KPA_PASSWORD=$(curl -sL -X GET "https://$(cs_cloud)/kubernetes-protection/entities/integration/agent/v1?cluster_name=""&is_self_managed_cluster=true" \
+        -H "Accept: application/yaml" \
+        -H "Authorization: Bearer ${FALCON_API_ACCESS_TOKEN}" | awk '/dockerAPIToken:/ {print $2}')
+    helm repo add kpagent-helm https://registry.crowdstrike.com/kpagent-helm && helm repo update
+    helm repo update
+    helm upgrade --install --create-namespace -n falcon-kubernetes-protection kpagent kpagent-helm/cs-k8s-protection-agent \
+        --set crowdstrikeConfig.clientID=${FALCON_CLIENT_ID} \
+        --set crowdstrikeConfig.clientSecret=${FALCON_CLIENT_SECRET} \
+        --set crowdstrikeConfig.clusterName=${K8S_CLUSTER_NAME} \
+        --set crowdstrikeConfig.env=${FALCON_CLOUD} \
+        --set crowdstrikeConfig.cid=${FALCON_CID} \
+        --set crowdstrikeConfig.dockerAPIToken=${FALCON_KPA_PASSWORD}
+    return
+}
 
 
+#Authenticate and deploy based on selected options
+auth_and_tag
+if [[ "${SENSORTYPE}" = "falcon-sensor" && $SKIPSENSOR = false ]]; then
+    deploy_node_sensor
+fi
+
+if [[ "${SENSORTYPE}" = "falcon-container" && $SKIPSENSOR = false ]]; then
+    deploy_container_sensor
+fi
+
+if [ $SKIPKPA = false ]; then
+    deploy_kpa
+fi

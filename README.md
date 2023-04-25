@@ -81,7 +81,6 @@ Settings can be passed to the script through CLI Flags or environment variables:
 | `-r`, `--region <FALCON_CLOUD>`                | `$FALCON_CLOUD`         | `us-1` (Optional)          | CrowdStrike Region                                                                       |                               |
 | `-v`, `--version <SENSOR_VERSION>`             | `$SENSOR_VERSION`       | `None` (Optional)          | Specify sensor version to retrieve from the registry                                     |
 | `-p`, `--platform <SENSOR_PLATFORM>`           | `$SENSOR_PLATFORM`      | `None` (Optional)          | Specify sensor platform to retrieve from the registry                                    |
-| `-n`, `--node`                                 | `$SENSORTYPE`           | `falcon-sensor` (Optional) | Flag to download Node Sensor, if not set script defaults to downloading container sensor |
 | `--runtime`                                    | `$CONTAINER_TOOL`       | `docker` (Optional)        | Use a different container runtime [docker, podman, skopeo]. Default is docker. Local container runtime is used to list tags.         |                                         |
 | `--ebpf`                                 | N/A                     | `None`                     | Deploys node sensor in user / eBPF mode instead of kernel mode. Not compatible with sidecar sensor.  
 | `--sidecar`                                 | N/A                     | `None`                     | Deploys sidecar sensor injector as daemonset    
