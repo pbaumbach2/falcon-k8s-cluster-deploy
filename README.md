@@ -107,4 +107,4 @@ To uninstall, run the following command:
 
 ```
 ./falcon-k8s-cluster-deploy.sh --uninstall
-```
+``` 

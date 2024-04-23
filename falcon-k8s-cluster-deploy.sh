@@ -299,5 +299,5 @@ else
     echo "kubectl get pods -n falcon-kubernetes-protection"
     echo "kubectl get pods -n falcon-image-analyzer"
 
-fi
+fi 
 
