@@ -44,7 +44,8 @@ Help Options:
 
   
 
-Execute the script with the required and relevant input arguments. Script will pull alcon-container-sensor-pull.sh from https://github.com/CrowdStrike/falcon-scripts/tree/main/bash/containers/falcon-container-sensor-pull into the current directory then deploy resources into a Kubernetes cluster using helm.
+Execute the script with the required and relevant input arguments. 
+Script references falcon-container-sensor-pull.sh from https://github.com/CrowdStrike/falcon-scripts/tree/main/bash/containers/falcon-container-sensor-pull 
 
   The node sensor will deploy as a daemonset and automatically protect the host and all containers on the host.
 
@@ -107,4 +108,4 @@ To uninstall, run the following command:
 
 ```
 ./falcon-k8s-cluster-deploy.sh --uninstall
-```
+``` 
