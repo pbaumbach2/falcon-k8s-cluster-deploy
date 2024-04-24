@@ -2,7 +2,7 @@
 : <<'#DESCRIPTION#'
 File: falcon-k8s-deploy.sh
 Description: Bash script for x86 architecture to deploy Falcon Node Sensor as daemonset, KPA, KAC, IAR scanning in watcher mode
-Requirements: helm 
+Requirements: helm, curl 
 #DESCRIPTION#
 
 set -e
@@ -48,6 +48,9 @@ AZURE=false
 UNINSTALL=false
 AUTOPILOT=false
 SIDECAR=false
+#downloads sensor pull script to use within script
+sensorpullscript=$(curl -s https://raw.githubusercontent.com/CrowdStrike/falcon-scripts/main/bash/containers/falcon-container-sensor-pull/falcon-container-sensor-pull.sh)
+
 
 #Ensure User Mode Enabled if Autopilot
 if [ "$AUTOPILOT" = true ]; then
@@ -142,11 +145,13 @@ done
 
 #Get the falcon sensor image details and pull token and Deploy Daemonset
 function deploy_sensor {
-    export FALCON_CID=$( ./falcon-container-sensor-pull.sh -t falcon-sensor --get-cid )
-    export FALCON_IMAGE_FULL_PATH=$( ./falcon-container-sensor-pull.sh -t falcon-sensor --get-image-path )
+    echo Deploying Falcon Sensor as Daemonset
+    export FALCON_CID=$( bash <( echo "$sensorpullscript") -t falcon-sensor --get-cid )
+    export FALCON_IMAGE_FULL_PATH=$( bash <(echo "$sensorpullscript") -t falcon-sensor --get-image-path )
     export FALCON_IMAGE_REPO=$( echo $FALCON_IMAGE_FULL_PATH | cut -d':' -f 1 )
     export FALCON_IMAGE_TAG=$( echo $FALCON_IMAGE_FULL_PATH | cut -d':' -f 2 )
-    export FALCON_IMAGE_PULL_TOKEN=$( ./falcon-container-sensor-pull.sh -t falcon-sensor --get-pull-token )
+    export FALCON_IMAGE_PULL_TOKEN=$( bash <(echo "$sensorpullscript") -t falcon-sensor --get-pull-token )
+    bash  <(echo "$sensorpullscript") -t falcon-sensor --get-cid
 
     helm repo add crowdstrike https://crowdstrike.github.io/falcon-helm --force-update
     helm upgrade --install falcon-sensor crowdstrike/falcon-sensor -n falcon-system --create-namespace \
@@ -159,11 +164,11 @@ function deploy_sensor {
 }
 
 function deploy_container_sensor {
-    export FALCON_CID=$( ./falcon-container-sensor-pull.sh -t falcon-container --get-cid )
-    export FALCON_IMAGE_FULL_PATH=$( ./falcon-container-sensor-pull.sh -t falcon-container --get-image-path )
+    export FALCON_CID=$( bash <(echo "$sensorpullscript") -t falcon-container --get-cid )
+    export FALCON_IMAGE_FULL_PATH=$( bash <(echo "$sensorpullscript") -t falcon-container --get-image-path )
     export FALCON_IMAGE_REPO=$( echo $FALCON_IMAGE_FULL_PATH | cut -d':' -f 1 )
     export FALCON_IMAGE_TAG=$( echo $FALCON_IMAGE_FULL_PATH | cut -d':' -f 2 )
-    export FALCON_IMAGE_PULL_TOKEN=$( ./falcon-container-sensor-pull.sh -t falcon-container --get-pull-token )
+    export FALCON_IMAGE_PULL_TOKEN=$( bash <(echo "$sensorpullscript") -t falcon-container --get-pull-token )
 
     helm repo add crowdstrike https://crowdstrike.github.io/falcon-helm --force-update
     helm upgrade --install falcon-sensor crowdstrike/falcon-sensor -n falcon-system --create-namespace \
@@ -180,11 +185,11 @@ function deploy_container_sensor {
 
 #Install Falcon Kubernetes Admission controller (KAC)
 function deploy_kac {
-    export FALCON_CID=$( ./falcon-container-sensor-pull.sh -t falcon-kac --get-cid )
-    export FALCON_KAC_IMAGE_FULL_PATH=$( ./falcon-container-sensor-pull.sh -t falcon-kac --get-image-path )
+    export FALCON_CID=$( bash <(echo "$sensorpullscript") -t falcon-kac --get-cid )
+    export FALCON_KAC_IMAGE_FULL_PATH=$( bash <(echo "$sensorpullscript") -t falcon-kac --get-image-path )
     export FALCON_KAC_IMAGE_REPO=$( echo $FALCON_KAC_IMAGE_FULL_PATH | cut -d':' -f 1 )
     export FALCON_KAC_IMAGE_TAG=$( echo $FALCON_KAC_IMAGE_FULL_PATH | cut -d':' -f 2 )
-    export FALCON_IMAGE_PULL_TOKEN=$( ./falcon-container-sensor-pull.sh -t falcon-kac --get-pull-token )
+    export FALCON_IMAGE_PULL_TOKEN=$( bash <(echo "$sensorpullscript") -t falcon-kac --get-pull-token )
 
     helm repo add crowdstrike https://crowdstrike.github.io/falcon-helm --force-update
     helm upgrade --install falcon-kac crowdstrike/falcon-kac -n falcon-kac --create-namespace \
@@ -197,11 +202,11 @@ function deploy_kac {
 #Install Falcon Kubernetes Protection (KPA)
 #KPA uses difference CID Format from other components, (all lower without checksum)
 function deploy_kpa {
-    export FALCON_CID_KPA=$( ./falcon-container-sensor-pull.sh -t kpagent --get-cid )
-    export FALCON_KPA_IMAGE_FULL_PATH=$( ./falcon-container-sensor-pull.sh -t kpagent --get-image-path )
+    export FALCON_CID_KPA=$( bash <(echo "$sensorpullscript") -t kpagent --get-cid )
+    export FALCON_KPA_IMAGE_FULL_PATH=$( bash <(echo "$sensorpullscript") -t kpagent --get-image-path )
     export FALCON_KPA_IMAGE_REPO=$( echo $FALCON_KPA_IMAGE_FULL_PATH | cut -d':' -f 1 )
     export FALCON_KPA_IMAGE_TAG=$( echo $FALCON_KPA_IMAGE_FULL_PATH | cut -d':' -f 2 )
-    export FALCON_IMAGE_PULL_TOKEN=$( ./falcon-container-sensor-pull.sh -t kpagent --get-pull-token )
+    export FALCON_IMAGE_PULL_TOKEN=$( bash <(echo "$sensorpullscript") -t kpagent --get-pull-token )
     helm repo add crowdstrike https://crowdstrike.github.io/falcon-helm --force-update
     helm upgrade --install kpagent crowdstrike/cs-k8s-protection-agent -n falcon-kubernetes-protection --create-namespace \
         --set image.registryConfigJSON=$FALCON_IMAGE_PULL_TOKEN \
@@ -216,11 +221,11 @@ function deploy_kpa {
 
  #Deploying Image Assessment at Runtime (IAR)
 function deploy_iar {
-    export FALCON_CID=$( ./falcon-container-sensor-pull.sh -t falcon-imageanalyzer --get-cid )
-    export FALCON_IMAGE_FULL_PATH=$( ./falcon-container-sensor-pull.sh -t falcon-imageanalyzer --get-image-path )
+    export FALCON_CID=$( bash <(echo "$sensorpullscript") -t falcon-imageanalyzer --get-cid )
+    export FALCON_IMAGE_FULL_PATH=$( bash <(echo "$sensorpullscript") -t falcon-imageanalyzer --get-image-path )
     export FALCON_IMAGE_REPO=$( echo $FALCON_IMAGE_FULL_PATH | cut -d':' -f 1 )
     export FALCON_IMAGE_TAG=$( echo $FALCON_IMAGE_FULL_PATH | cut -d':' -f 2 )
-    export FALCON_IMAGE_PULL_TOKEN=$( ./falcon-container-sensor-pull.sh -t falcon-imageanalyzer --get-pull-token )
+    export FALCON_IMAGE_PULL_TOKEN=$( bash <(echo "$sensorpullscript") -t falcon-imageanalyzer --get-pull-token )
 
     helm repo add crowdstrike https://crowdstrike.github.io/falcon-helm
     helm repo update
@@ -265,10 +270,6 @@ function uninstall {
 if [ "$UNINSTALL" = true ]; then
     uninstall
 else 
-    
-    echo "Downloading latest falcon-container-sensor-pull.sh into current directory"
-    curl -O -s https://raw.githubusercontent.com/CrowdStrike/falcon-scripts/main/bash/containers/falcon-container-sensor-pull/falcon-container-sensor-pull.sh
-    chmod +x ./falcon-container-sensor-pull.sh
 
     if [ "$SKIPSENSOR" = false ] && [ "$SIDECAR" = false ]; then
         deploy_sensor
@@ -299,5 +300,5 @@ else
     echo "kubectl get pods -n falcon-kubernetes-protection"
     echo "kubectl get pods -n falcon-image-analyzer"
 
-fi
+fi 
 
