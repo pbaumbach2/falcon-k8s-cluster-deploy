@@ -92,6 +92,8 @@ Script references falcon-container-sensor-pull.sh from https://github.com/CrowdS
 | `-c` | `K8S_CLUSTER_NAME` | `None` (Required) | Name of Kubernetes Cluster
 | `--sidecar` | N/A | `false` | Deploys sidecar sensor injector as daemonset
 | `--ebpf` | N/A | `false` | Deploys node sensor in user / eBPF mode instead of kernel mode. Not compatible with sidecar sensor.
+| `--azure` | N/A | `false` | Enables IAR scanning for ACR sourced images on Azure using default Azure config JSON file path  . 
+| `--autopilot` | N/A | `false` | For deployments onto GKE autopilot. Defaults to eBPF / User mode.
 | `--skip-sensor` | N/A | `false` | Skips deployment of Falcon Sensor
 | `--skip-kpa` | N/A | `false` | Skips deployment of Kubernetes Protection Agent (KPA)
 | `--skip-kac` | N/A | `false` | Skips deployment of Kubernetes Admission Controller (KAC)
