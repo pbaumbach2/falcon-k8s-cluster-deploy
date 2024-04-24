@@ -80,13 +80,12 @@ Script references falcon-container-sensor-pull.sh from https://github.com/CrowdS
 
   
 
-### Full list of variables available:
+### Full list of variables available
 
-Settings can be passed to the script through CLI Flags or environment variables:
+> **Note**: **Settings can be passed to the script via CLI flags or environment variables:**
 
-| Flags | Environment Variables | Default | Description |
+| Flags                                          | Environment Variables   | Default                    | Description                                                                              |
 |:-----------------------------------------------|-------------------------|----------------------------|------------------------------------------------------------------------------------------|
-
 | `-u`, `--client-id <FALCON_CLIENT_ID>` | `$FALCON_CLIENT_ID` | `None` (Required) | CrowdStrike API Client ID 
 | `-s`, `--client-secret <FALCON_CLIENT_SECRET>` | `$FALCON_CLIENT_SECRET` | `None` (Required) | CrowdStrike API Client Secret |
 | `-r`, `--region <FALCON_CLOUD>` | `$FALCON_CLOUD` | `None` (Required) | CrowdStrike Region | |
