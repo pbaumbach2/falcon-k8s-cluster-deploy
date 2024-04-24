@@ -20,6 +20,7 @@ Optional Flags:
     --sidecar                        Deploy container sensor as sidecar. Existing pods must be restarted to install sidecar sensors.
     --ebpf                           Deploy Falcon sensor in eBPF (user) mode. (Used for Google COS, Flatcar, CoreOS, etc)
     --azure                          Enables IAR scanning for ACR sourced images on Azure using default Azure config JSON file path   
+    --autopilot                      For deployments onto GKE autopilot. Defaults to eBPF / User mode
     --skip-sensor                    Skip deployment of Falcon sensor
     --skip-kpa                       Skip deployment of KPA (Kubernetes Protection Agent) 
     --skip-kac                       Skip deployment of KAC (Kubernetes Admission Control)
@@ -119,6 +120,11 @@ case "$1" in
     --azure)
     if [ -n "${1}" ]; then
         AZURE=true
+    fi
+    ;;
+    --autopilot)
+    if [ -n "${1}" ]; then
+        AUTOPILOT=true
     fi
     ;;
     --uninstall)
