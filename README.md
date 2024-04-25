@@ -13,7 +13,7 @@ For other deployment methods including hosting sensor in private registry, Terra
 - Script requires the following commands to be installed:
 -  `curl`
 -  `helm`
-- CrowdStrike API Client created with `Falcon Images Download (read)`, `Sensor Download (read)`, `Kubernetes Protection Agent (write)`, and `Kubernetes Protection (read/write)` scope assigned.
+- CrowdStrike API Client created with `Falcon Images Download (read)`, `Sensor Download (read)`, `Kubernetes Protection Agent (write)`, `Kubernetes Protection (read/write)`, `Falcon Container CLI (write) `, and `Falcon Container Image (read/write)` scopes assigned.
 - Cluster name
 
 ## Usage:
