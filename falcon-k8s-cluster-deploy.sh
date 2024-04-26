@@ -250,10 +250,19 @@ function deploy_iar {
 }
 function uninstall {
     echo "Uninstalling Falcon Cloud Security for Containers Components"
-    helm uninstall falcon-sensor -n falcon-system --ignore-not-found 
-    helm uninstall falcon-kac -n falcon-kac --ignore-not-found 
-    helm uninstall kpagent -n falcon-kubernetes-protection --ignore-not-found 
-    helm uninstall iar -n falcon-image-analyzer --ignore-not-found 
+    if [ -n "$(eval "helm list --filter 'falcon-sensor' -n falcon-system | grep falcon-sensor")" ]; then
+        helm uninstall falcon-sensor -n falcon-system 
+    fi
+    if [ -n "$(eval "helm list --filter 'falcon-kac' -n falcon-kac | grep falcon-kac")" ]; then
+        helm uninstall falcon-kac -n falcon-kac
+    fi
+    if [ -n "$(eval "helm list --filter 'kpagent' -n falcon-kubernetes-protection | grep kpagent")" ]; then
+        helm uninstall kpagent -n falcon-kubernetes-protection
+    fi
+    if [ -n "$(eval "helm list --filter 'iar' -n falcon-image-analyzer | grep iar")" ]; then
+        helm uninstall iar -n falcon-image-analyzer 
+    fi
+     
     if [ -n "$(eval "kubectl get ns | grep falcon-system")" ]; then
         kubectl delete ns falcon-system 
     fi
@@ -307,4 +316,3 @@ else
     echo "kubectl get pods -n falcon-image-analyzer"
 
 fi 
-
