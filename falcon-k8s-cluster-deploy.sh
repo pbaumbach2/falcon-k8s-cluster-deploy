@@ -26,6 +26,7 @@ Optional Flags:
     --skip-kac                       Skip deployment of KAC (Kubernetes Admission Control)
     --skip-iar                       Skip deployment of IAR (Image at Runtime Scanning)
     --uninstall                      Uninstalls all components
+    --tags <TAG1,TAG2>               Tag the Falcon sensor. Multiple tags must formatted with \, separators. e.g. --tags "exampletag1\,exampletag2"
 
 
 Help Options:
@@ -84,6 +85,12 @@ case "$1" in
     -c|--cluster)
     if [ -n "${2}" ]; then
         K8S_CLUSTER_NAME="${2}"
+        shift
+    fi
+    ;;
+   -t|--tags)
+    if [ -n "${2}" ]; then
+        SENSOR_TAGS="${2}"
         shift
     fi
     ;;
@@ -162,6 +169,7 @@ function deploy_sensor {
     helm repo add crowdstrike https://crowdstrike.github.io/falcon-helm --force-update
     helm upgrade --install falcon-sensor crowdstrike/falcon-sensor -n falcon-system --create-namespace \
     --set falcon.cid="$FALCON_CID" \
+    --set falcon.tags="$SENSOR_TAGS" \
     --set node.image.repository="$FALCON_IMAGE_REPO" \
     --set node.image.tag="$FALCON_IMAGE_TAG" \
     --set node.image.registryConfigJSON="$FALCON_IMAGE_PULL_TOKEN" \
@@ -181,6 +189,7 @@ function deploy_container_sensor {
     --set node.enabled=false \
     --set container.enabled=true \
     --set falcon.cid="$FALCON_CID" \
+    --set falcon.tags="$SENSOR_TAGS" \
     --set container.image.repository="$FALCON_IMAGE_REPO" \
     --set container.image.tag="$FALCON_IMAGE_TAG" \
     --set container.image.pullSecrets.enable=true \
@@ -200,6 +209,7 @@ function deploy_kac {
     helm repo add crowdstrike https://crowdstrike.github.io/falcon-helm --force-update
     helm upgrade --install falcon-kac crowdstrike/falcon-kac -n falcon-kac --create-namespace \
         --set falcon.cid="$FALCON_CID" \
+        --set falcon.tags="$SENSOR_TAGS" \
         --set image.repository="$FALCON_KAC_IMAGE_REPO" \
         --set image.tag="$FALCON_KAC_IMAGE_TAG" \
         --set image.registryConfigJSON="$FALCON_IMAGE_PULL_TOKEN"
@@ -222,7 +232,7 @@ function deploy_kpa {
         --set crowdstrikeConfig.clientID=$FALCON_CLIENT_ID \
         --set crowdstrikeConfig.clientSecret=$FALCON_CLIENT_SECRET \
         --set crowdstrikeConfig.clusterName=$K8S_CLUSTER_NAME \
-        --set crowdstrikeConfig.env=$FALCON_CLOUD_ENV
+        --set crowdstrikeConfig.env=$FALCON_CLOUD
 }
 
  #Deploying Image Assessment at Runtime (IAR)
@@ -242,7 +252,7 @@ function deploy_iar {
     --set crowdstrikeConfig.clusterName="$K8S_CLUSTER_NAME" \
     --set crowdstrikeConfig.clientID=$FALCON_CLIENT_ID \
     --set crowdstrikeConfig.clientSecret=$FALCON_CLIENT_SECRET \
-    --set crowdstrikeConfig.agentRegion=$FALCON_CLOUD_ENV \
+    --set crowdstrikeConfig.agentRegion=$FALCON_CLOUD \
     --set image.registryConfigJSON=$FALCON_IMAGE_PULL_TOKEN \
     --set image.repository="$FALCON_IMAGE_REPO" \
     --set image.tag="$FALCON_IMAGE_TAG" \
@@ -282,6 +292,7 @@ function uninstall {
 }
 
 
+
 if [ "$UNINSTALL" = true ]; then
     uninstall
 else 
@@ -316,3 +327,4 @@ else
     echo "kubectl get pods -n falcon-image-analyzer"
 
 fi 
+
