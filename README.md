@@ -51,6 +51,15 @@ Script references falcon-container-sensor-pull.sh from https://github.com/CrowdS
 
   The sidecar sensor will deploy sensor injector pods. The injector will deploy the sidecar sensor into all newly started pods. Pre-existing workloads must be redeployed to be protected. The pull secret will be deployed into all namespaces at the time of helm chart deployment.
 
+  #### Example to set environment variables to skip switches in subsequent examples
+```
+export FALCON_CLIENT_ID=<your client id>
+export FALCON_CLIENT_SECRET=<your client secret>
+export K8S_CLUSTER_NAME=<name of kubernetes cluster>
+export FALCON_CLOUD=
+
+```
+  
   #### Example to deploy node sensor as daemonset, KPA, KAC, and IAR:
 
 ```
