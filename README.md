@@ -35,6 +35,7 @@ Optional Flags:
     --skip-kpa                       Skip deployment of KPA (Kubernetes Protection Agent) 
     --skip-kac                       Skip deployment of KAC (Kubernetes Admission Control)
     --skip-iar                       Skip deployment of IAR (Image at Runtime Scanning)
+    --tags <TAG1,TAG2>               Tag the Falcon sensor. Multiple tags must formatted with \, separators. e.g. --tags "exampletag1\,exampletag2"
     --uninstall                      Uninstalls all components
 
 Help Options:
