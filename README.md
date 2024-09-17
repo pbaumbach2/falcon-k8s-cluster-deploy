@@ -29,7 +29,6 @@ Required Flags:
     -c, --cluster <K8S_CLUSTER_NAME>               Cluster name
 Optional Flags:
     --sidecar                        Deploy container sensor as sidecar. Existing pods must be restarted to install sidecar sensors.
-    --ebpf                           Deploy Falcon sensor in eBPF (user) mode. (Used for Google COS, Flatcar, CoreOS, etc)
     --azure                          Enables IAR scanning for ACR sourced images on Azure using default Azure config JSON file path   
     --skip-sensor                    Skip deployment of Falcon sensor
     --skip-kpa                       Skip deployment of KPA (Kubernetes Protection Agent) 
