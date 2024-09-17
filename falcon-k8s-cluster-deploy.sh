@@ -18,7 +18,6 @@ Required Flags:
     -c, --cluster <K8S_CLUSTER_NAME>               Cluster name
 Optional Flags:
     --sidecar                        Deploy container sensor as sidecar. Existing pods must be restarted to install sidecar sensors.
-    --ebpf                           Deploy Falcon sensor in eBPF (user) mode. (Used for Google COS, Flatcar, CoreOS, etc)
     --azure                          Enables IAR scanning for ACR sourced images on Azure using default Azure config JSON file path   
     --autopilot                      For deployments onto GKE autopilot. Defaults to eBPF / User mode
     --skip-sensor                    Skip deployment of Falcon sensor
@@ -173,7 +172,6 @@ function deploy_sensor {
     --set node.image.repository="$FALCON_IMAGE_REPO" \
     --set node.image.tag="$FALCON_IMAGE_TAG" \
     --set node.image.registryConfigJSON="$FALCON_IMAGE_PULL_TOKEN" \
-    --set node.backend="$BACKEND" \
     --set node.gke.autopilot="$AUTOPILOT"
 }
 
