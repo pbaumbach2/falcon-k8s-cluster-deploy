@@ -303,9 +303,9 @@ else
         deploy_container_sensor
     fi
 
-    if [ "$SKIPKPA" = false ]; then
-        deploy_kpa
-    fi
+    # if [ "$SKIPKPA" = false ]; then
+    #     deploy_kpa
+    # fi
 
     if [ "$SKIPKAC" = false ]; then
         deploy_kac
