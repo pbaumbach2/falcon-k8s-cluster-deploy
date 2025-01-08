@@ -1,7 +1,7 @@
 #!/bin/bash
 : <<'#DESCRIPTION#'
 File: falcon-k8s-deploy.sh
-Description: Bash script for x86 architecture to deploy Falcon Node Sensor as daemonset, KPA, KAC, IAR scanning in watcher mode
+Description: Bash script for x86 architecture to deploy Falcon Node Sensor as daemonset, KAC, IAR scanning in watcher mode
 Requirements: helm, curl 
 #DESCRIPTION#
 
@@ -21,7 +21,6 @@ Optional Flags:
     --azure                          Enables IAR scanning for ACR sourced images on Azure using default Azure config JSON file path   
     --autopilot                      For deployments onto GKE autopilot. Defaults to eBPF / User mode
     --skip-sensor                    Skip deployment of Falcon sensor
-    --skip-kpa                       Skip deployment of KPA (Kubernetes Protection Agent) 
     --skip-kac                       Skip deployment of KAC (Kubernetes Admission Control)
     --skip-iar                       Skip deployment of IAR (Image at Runtime Scanning)
     --uninstall                      Uninstalls all components
@@ -41,7 +40,6 @@ die() {
 
 #Set Default Values
 BACKEND=kernel
-SKIPKPA=false
 SKIPSENSOR=false
 SKIPKAC=false
 SKIPIAR=false
@@ -96,11 +94,6 @@ case "$1" in
     --ebpf)
     if [ -n "${1}" ]; then
         BACKEND="bpf"      
-    fi
-    ;;
-    --skip-kpa)
-    if [ -n "${1}" ]; then
-        SKIPKPA=true
     fi
     ;;
     --skip-sensor)
@@ -213,26 +206,6 @@ function deploy_kac {
         --set image.registryConfigJSON="$FALCON_IMAGE_PULL_TOKEN"
 }
 
-#Install Falcon Kubernetes Protection (KPA)
-#KPA uses difference CID Format from other components, (all lower without checksum)
-function deploy_kpa {
-    export FALCON_CID_KPA=$( bash <(echo "$sensorpullscript") -t kpagent --get-cid )
-    export FALCON_KPA_IMAGE_FULL_PATH=$( bash <(echo "$sensorpullscript") -t kpagent --get-image-path )
-    export FALCON_KPA_IMAGE_REPO=$( echo $FALCON_KPA_IMAGE_FULL_PATH | cut -d':' -f 1 )
-    export FALCON_KPA_IMAGE_TAG=$( echo $FALCON_KPA_IMAGE_FULL_PATH | cut -d':' -f 2 )
-    export FALCON_IMAGE_PULL_TOKEN=$( bash <(echo "$sensorpullscript") -t kpagent --get-pull-token )
-    helm repo add crowdstrike https://crowdstrike.github.io/falcon-helm --force-update
-    helm upgrade --install kpagent crowdstrike/cs-k8s-protection-agent -n falcon-kubernetes-protection --create-namespace \
-        --set image.registryConfigJSON=$FALCON_IMAGE_PULL_TOKEN \
-        --set image.repository=$FALCON_KPA_IMAGE_REPO \
-        --set image.tag=$FALCON_KPA_IMAGE_TAG \
-        --set crowdstrikeConfig.cid=$FALCON_CID_KPA \
-        --set crowdstrikeConfig.clientID=$FALCON_CLIENT_ID \
-        --set crowdstrikeConfig.clientSecret=$FALCON_CLIENT_SECRET \
-        --set crowdstrikeConfig.clusterName=$K8S_CLUSTER_NAME \
-        --set crowdstrikeConfig.env=$FALCON_CLOUD
-}
-
  #Deploying Image Assessment at Runtime (IAR)
 function deploy_iar {
     export FALCON_CID=$( bash <(echo "$sensorpullscript") -t falcon-imageanalyzer --get-cid )
@@ -264,9 +237,6 @@ function uninstall {
     if [ -n "$(eval "helm list --filter 'falcon-kac' -n falcon-kac | grep falcon-kac")" ]; then
         helm uninstall falcon-kac -n falcon-kac
     fi
-    if [ -n "$(eval "helm list --filter 'kpagent' -n falcon-kubernetes-protection | grep kpagent")" ]; then
-        helm uninstall kpagent -n falcon-kubernetes-protection
-    fi
     if [ -n "$(eval "helm list --filter 'iar' -n falcon-image-analyzer | grep iar")" ]; then
         helm uninstall iar -n falcon-image-analyzer 
     fi
@@ -277,16 +247,9 @@ function uninstall {
     if [ -n "$(eval "kubectl get ns | grep falcon-kac")" ]; then
         kubectl delete ns falcon-kac 
     fi
-    if [ -n "$(eval "kubectl get ns | grep falcon-kubernetes-protection")" ]; then
-        kubectl delete ns falcon-kubernetes-protection  
-    fi
     if [ -n "$(eval "kubectl get ns | grep falcon-image-analyzer")" ]; then
         kubectl delete ns falcon-image-analyzer 
     fi
-    # kubectl delete ns falcon-system --ignore-not-found
-    # kubectl delete ns falcon-kac --ignore-not-found
-    # kubectl delete ns falcon-kubernetes-protection --ignore-not-found
-    # kubectl delete ns falcon-image-analyzer --ignore-not-found
 }
 
 
@@ -303,10 +266,6 @@ else
         deploy_container_sensor
     fi
 
-    # if [ "$SKIPKPA" = false ]; then
-    #     deploy_kpa
-    # fi
-
     if [ "$SKIPKAC" = false ]; then
         deploy_kac
     fi
@@ -321,8 +280,6 @@ else
     echo ""
     echo "kubectl get pods -n falcon-system"
     echo "kubectl get pods -n falcon-kac"
-    echo "kubectl get pods -n falcon-kubernetes-protection"
     echo "kubectl get pods -n falcon-image-analyzer"
 
-fi 
-
+fi

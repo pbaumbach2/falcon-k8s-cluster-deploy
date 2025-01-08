@@ -1,6 +1,6 @@
 # falcon-k8s-cluster-deploy
 
-Bash script to deploy latest versions of Node Sensor daemonset or Container Sensor Injector, Kubernetes Protection Agent(KPA), Kubernetes Admission Controller(KAC), and Image at Runtime Scanner (IAR) pulling all images from the CrowdStrike Registry.
+Bash script to deploy latest versions of Node Sensor daemonset or Container Sensor Injector, Kubernetes Admission Controller(KAC), and Image at Runtime Scanner (IAR) pulling all images from the CrowdStrike Registry.
 
 ## Purpose:
 
@@ -13,7 +13,7 @@ For other deployment methods including hosting sensor in private registry, Terra
 - Script requires the following commands to be installed:
 -  `curl`
 -  `helm`
-- CrowdStrike API Client created with `Falcon Images Download (read)`, `Sensor Download (read)`, `Kubernetes Protection Agent (write)`, `Kubernetes Protection (read/write)`, `Falcon Container CLI (write) `, and `Falcon Container Image (read/write)` scopes assigned.
+- CrowdStrike API Client created with `Falcon Images Download (read)`, `Sensor Download (read)`, `Falcon Container CLI (write) `, and `Falcon Container Image (read/write)` scopes assigned.
 - Cluster name
 
 ## Usage:
@@ -31,7 +31,6 @@ Optional Flags:
     --sidecar                        Deploy container sensor as sidecar. Existing pods must be restarted to install sidecar sensors.
     --azure                          Enables IAR scanning for ACR sourced images on Azure using default Azure config JSON file path   
     --skip-sensor                    Skip deployment of Falcon sensor
-    --skip-kpa                       Skip deployment of KPA (Kubernetes Protection Agent) 
     --skip-kac                       Skip deployment of KAC (Kubernetes Admission Control)
     --skip-iar                       Skip deployment of IAR (Image at Runtime Scanning)
     --tags <TAG1,TAG2>               Tag the Falcon sensor. Multiple tags must formatted with \, separators. e.g. --tags "exampletag1\,exampletag2"
@@ -60,7 +59,7 @@ export FALCON_CLOUD=
 
 ```
   
-  #### Example to deploy node sensor as daemonset, KPA, KAC, and IAR:
+  #### Example to deploy node sensor as daemonset, KAC, and IAR:
 
 ```
 
@@ -73,7 +72,7 @@ export FALCON_CLOUD=
 
   
 
-#### Example to deploy sidecar sensor. KPA, KAC, and IAR:
+#### Example to deploy sidecar sensor, KAC, and IAR:
 
   
 
@@ -104,7 +103,6 @@ export FALCON_CLOUD=
 | `--azure` | N/A | `false` | Enables IAR scanning for ACR sourced images on Azure using default Azure config JSON file path  . 
 | `--autopilot` | N/A | `false` | For deployments onto GKE autopilot. Defaults to eBPF / User mode.
 | `--skip-sensor` | N/A | `false` | Skips deployment of Falcon Sensor
-| `--skip-kpa` | N/A | `false` | Skips deployment of Kubernetes Protection Agent (KPA)
 | `--skip-kac` | N/A | `false` | Skips deployment of Kubernetes Admission Controller (KAC)
 | `--skip-iar` | N/A | `false` | Skips deployment of Image at Runtime Scanner (IAR)
 | `--uninstall` | N/A | `false` | Uninstalls all components
